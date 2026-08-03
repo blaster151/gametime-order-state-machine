@@ -1,4 +1,4 @@
-# Gametime Order State Machine (Prototype)
+# Gametime Order State Machine
 
 A small TypeScript service modeling the checkout backend's order state
 machine, with stage-dependent failure recovery: a payment decline just
