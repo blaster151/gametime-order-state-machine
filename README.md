@@ -71,6 +71,8 @@ flowchart LR
     payment_authorized -->|completion succeeds| complete
     payment_authorized -->|completion fails, void succeeds| cancelled
     payment_authorized -->|completion fails, void fails| needs_attention
+
+    complete ~~~ cancelled ~~~ needs_attention ~~~ rejected
 ```
 
 **Central invariant:** once an order reaches `payment_authorized`, it must
