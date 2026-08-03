@@ -22,16 +22,21 @@ const TERMINAL_STATES: ReadonlySet<OrderState> = new Set([
 ]);
 
 /** Legal `from -> to` transitions. Anything not listed here is rejected. */
-const ALLOWED_TRANSITIONS: Readonly<Record<OrderState, readonly OrderState[]>> = {
+const ALLOWED_TRANSITIONS = {
   initialized: ['payment_authorized', 'rejected'],
   payment_authorized: ['complete', 'cancelled', 'needs_attention'],
   complete: [],
   rejected: [],
   cancelled: [],
   needs_attention: [],
-};
+} as const satisfies Record<OrderState, readonly OrderState[]>;
 
-/** Machine-readable reason codes, one per way an order can move between states. */
+/**
+ * Machine-readable audit reasons. Today each handled transition has one code,
+ * but this is intentionally separate from `fromState -> toState` so future
+ * workflows can distinguish multiple causes for the same edge without
+ * changing the history shape.
+ */
 export type TransitionReasonCode =
   | 'order_created'
   | 'payment_authorized'
@@ -112,7 +117,7 @@ export class Order {
    * an invalid transition.
    */
   assertCanTransitionTo(next: OrderState): void {
-    const allowedNextStates = ALLOWED_TRANSITIONS[this.state];
+    const allowedNextStates: readonly OrderState[] = ALLOWED_TRANSITIONS[this.state];
     if (!allowedNextStates.includes(next)) {
       throw new InvalidTransitionError(this.id, this.state, next);
     }
@@ -122,8 +127,9 @@ export class Order {
     this.assertCanTransitionTo(next);
 
     const from = this.state;
+    const entry = { fromState: from, toState: next, at: this.clock.now(), reason };
+    this.history.push(entry);
     this.state = next;
-    this.history.push({ fromState: from, toState: next, at: this.clock.now(), reason });
   }
 
   /** initialized -> payment_authorized. Stores the authorization id for a later void, if ever needed. */

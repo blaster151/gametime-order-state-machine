@@ -12,6 +12,11 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Forces discriminated-union handlers to stay exhaustive when result shapes change. */
+function assertNever(value: never): never {
+  throw new Error(`Unhandled result variant: ${JSON.stringify(value)}`);
+}
+
 /**
  * Orchestrates the order lifecycle: guards which stage a command is legal
  * from, calls the relevant external dependency, and applies the resulting
@@ -47,16 +52,21 @@ export class OrderService {
       (message) => ({ outcome: 'error', reason: message })
     );
 
-    if (result.outcome === 'approved') {
-      order.markPaymentAuthorized(result.authorizationId);
-    } else if (result.outcome === 'declined') {
-      order.rejectPayment(result.reason);
-    } else {
-      // Unexpected technical failure — distinct from a decline. We don't know
-      // whether the charge went through, so the order is left `initialized`
-      // (no state mutation) rather than guessing. Surfaced as an error for
-      // the caller to retry or investigate.
-      throw new PaymentAuthorizationError(orderId, result.reason);
+    switch (result.outcome) {
+      case 'approved':
+        order.markPaymentAuthorized(result.authorizationId);
+        break;
+      case 'declined':
+        order.rejectPayment(result.reason);
+        break;
+      case 'error':
+        // Unexpected technical failure — distinct from a decline. We don't know
+        // whether the charge went through, so the order is left `initialized`
+        // (no state mutation) rather than guessing. Surfaced as an error for
+        // the caller to retry or investigate.
+        throw new PaymentAuthorizationError(orderId, result.reason);
+      default:
+        assertNever(result);
     }
 
     await this.repository.save(order);
@@ -76,10 +86,15 @@ export class OrderService {
       (message) => ({ outcome: 'failed', reason: message })
     );
 
-    if (completionResult.outcome === 'completed') {
-      order.markComplete();
-      await this.repository.save(order);
-      return order;
+    switch (completionResult.outcome) {
+      case 'completed':
+        order.markComplete();
+        await this.repository.save(order);
+        return order;
+      case 'failed':
+        break;
+      default:
+        assertNever(completionResult);
     }
 
     const authorizationId = order.getAuthorizationId();
@@ -95,18 +110,21 @@ export class OrderService {
       (message) => ({ outcome: 'error', reason: message })
     );
 
-    if (voidResult.outcome === 'voided') {
-      order.markCancelledAfterVoid(completionResult.reason);
-      await this.repository.save(order);
-      return order;
+    switch (voidResult.outcome) {
+      case 'voided':
+        order.markCancelledAfterVoid(completionResult.reason);
+        await this.repository.save(order);
+        return order;
+      case 'error':
+        // Void also failed: persist needs_attention with both failure reasons
+        // *before* surfacing the error, so the order is never lost even though
+        // the caller sees a thrown error.
+        order.markNeedsAttention(completionResult.reason, voidResult.reason);
+        await this.repository.save(order);
+        throw new PartialFailureError(orderId, completionResult.reason, voidResult.reason);
+      default:
+        assertNever(voidResult);
     }
-
-    // Void also failed: persist needs_attention with both failure reasons
-    // *before* surfacing the error, so the order is never lost even though
-    // the caller sees a thrown error.
-    order.markNeedsAttention(completionResult.reason, voidResult.reason);
-    await this.repository.save(order);
-    throw new PartialFailureError(orderId, completionResult.reason, voidResult.reason);
   }
 
   async getOrder(orderId: string): Promise<Order> {

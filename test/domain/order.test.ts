@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { Clock } from '../../src/domain/clock';
 import { Order } from '../../src/domain/order';
 import { InvalidTransitionError } from '../../src/domain/errors';
 import { SequentialClock } from '../support/sequential-clock';
+
+class ThrowsAfterFirstTickClock implements Clock {
+  private calls = 0;
+
+  now(): Date {
+    if (this.calls++ === 0) {
+      return new Date(0);
+    }
+    throw new Error('clock failed');
+  }
+}
 
 describe('Order domain model', () => {
   it('records an initial history entry on creation', () => {
@@ -72,6 +84,17 @@ describe('Order domain model', () => {
     expect(() => order.markComplete()).toThrow(InvalidTransitionError);
 
     expect(order.getState()).toBe('initialized');
+    expect(order.getHistory()).toEqual(historyBefore);
+  });
+
+  it('keeps state and history unchanged if timestamping a transition fails', () => {
+    const order = Order.create('order-1', new ThrowsAfterFirstTickClock());
+    const historyBefore = order.getHistory();
+
+    expect(() => order.markPaymentAuthorized('auth-1')).toThrow('clock failed');
+
+    expect(order.getState()).toBe('initialized');
+    expect(order.getAuthorizationId()).toBeNull();
     expect(order.getHistory()).toEqual(historyBefore);
   });
 
