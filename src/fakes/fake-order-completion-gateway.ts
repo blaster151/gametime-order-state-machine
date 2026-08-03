@@ -1,13 +1,20 @@
 import { CompletionResult, OrderCompletionGateway } from '../gateways/order-completion-gateway';
 
-export type FakeCompletionBehavior = { outcome: 'completed' } | { outcome: 'failed'; reason?: string };
+function toThrown(error: unknown, fallbackMessage: string): Error {
+  return error instanceof Error ? error : new Error(typeof error === 'string' ? error : fallbackMessage);
+}
+
+export type FakeCompletionBehavior =
+  | { outcome: 'completed' }
+  | { outcome: 'failed'; reason?: string }
+  | { outcome: 'throws'; error?: unknown };
 
 export interface FakeOrderCompletionGatewayCall {
   readonly method: 'complete';
   readonly orderId: string;
 }
 
-/** Deterministic OrderCompletionGateway test double â€” same shape as FakePaymentGateway. */
+/** Deterministic OrderCompletionGateway test double — same shape as FakePaymentGateway. */
 export class FakeOrderCompletionGateway implements OrderCompletionGateway {
   readonly calls: FakeOrderCompletionGatewayCall[] = [];
 
@@ -22,6 +29,9 @@ export class FakeOrderCompletionGateway implements OrderCompletionGateway {
 
     if (this.behavior.outcome === 'completed') {
       return { outcome: 'completed' };
+    }
+    if (this.behavior.outcome === 'throws') {
+      throw toThrown(this.behavior.error, 'complete rejected unexpectedly');
     }
     return { outcome: 'failed', reason: this.behavior.reason ?? 'fulfillment_error' };
   }

@@ -3,7 +3,7 @@ import { InvalidTransitionError } from './errors';
 
 /**
  * The six states an order can occupy. These are the entire vocabulary of the
- * domain â€” keep this list, and the ALLOWED_TRANSITIONS table below it, as the
+ * domain — keep this list, and the ALLOWED_TRANSITIONS table below it, as the
  * single source of truth for what the order state machine can do.
  */
 export type OrderState =
@@ -91,9 +91,14 @@ export class Order {
     return this.authorizationId;
   }
 
-  /** Returns a defensive copy so callers cannot mutate the internal audit trail. */
+  /**
+   * Returns a defensive copy so callers cannot mutate the internal audit
+   * trail. A deep clone is required, not just a shallow spread: each entry's
+   * `at` (a `Date`), `reason`, and `reason.metadata` are nested mutable
+   * values that a shallow copy would still share with the original.
+   */
   getHistory(): HistoryEntry[] {
-    return this.history.map((entry) => ({ ...entry, reason: { ...entry.reason } }));
+    return structuredClone(this.history);
   }
 
   isTerminal(): boolean {

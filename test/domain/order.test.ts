@@ -107,6 +107,27 @@ describe('Order domain model', () => {
     expect(order.getState()).toBe('initialized');
   });
 
+  it('never lets external mutation of a returned entry\'s nested Date, reason, or metadata affect internal state', () => {
+    const order = Order.create('order-1', new SequentialClock());
+    order.markPaymentAuthorized('auth-1');
+    order.markNeedsAttention('fulfillment_error', 'gateway_timeout');
+
+    const history = order.getHistory();
+    const entry = history.at(-1)!;
+    const originalYear = entry.at.getFullYear();
+    const originalCode = entry.reason.code;
+    const originalMetadata = { ...entry.reason.metadata };
+
+    entry.at.setFullYear(1995);
+    (entry.reason as { code: string }).code = 'completion_succeeded';
+    (entry.reason.metadata as Record<string, unknown>).completionFailureMessage = 'tampered';
+
+    const freshEntry = order.getHistory().at(-1)!;
+    expect(freshEntry.at.getFullYear()).toBe(originalYear);
+    expect(freshEntry.reason.code).toBe(originalCode);
+    expect(freshEntry.reason.metadata).toEqual(originalMetadata);
+  });
+
   it('keeps current state and the last history entry in agreement after every legal transition', () => {
     const order = Order.create('order-1', new SequentialClock());
     order.markPaymentAuthorized('auth-1');

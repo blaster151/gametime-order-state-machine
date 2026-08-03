@@ -1,11 +1,19 @@
 import { AuthorizeResult, PaymentGateway, VoidResult } from '../gateways/payment-gateway';
 
+function toThrown(error: unknown, fallbackMessage: string): Error {
+  return error instanceof Error ? error : new Error(typeof error === 'string' ? error : fallbackMessage);
+}
+
 export type FakeAuthorizeBehavior =
   | { outcome: 'approved'; authorizationId?: string }
   | { outcome: 'declined'; reason?: string }
-  | { outcome: 'error'; reason?: string };
+  | { outcome: 'error'; reason?: string }
+  | { outcome: 'throws'; error?: unknown };
 
-export type FakeVoidBehavior = { outcome: 'voided' } | { outcome: 'error'; reason?: string };
+export type FakeVoidBehavior =
+  | { outcome: 'voided' }
+  | { outcome: 'error'; reason?: string }
+  | { outcome: 'throws'; error?: unknown };
 
 export interface FakePaymentGatewayCall {
   readonly method: 'authorize' | 'void';
@@ -15,8 +23,8 @@ export interface FakePaymentGatewayCall {
 
 /**
  * Deterministic PaymentGateway test double. Behavior is fixed at construction
- * (no randomness) and every call is recorded â€” including an optional shared
- * log array â€” so tests can assert call counts, arguments, and cross-fake
+ * (no randomness) and every call is recorded — including an optional shared
+ * log array — so tests can assert call counts, arguments, and cross-fake
  * ordering (e.g. completionGateway.complete() before gateway.void()).
  */
 export class FakePaymentGateway implements PaymentGateway {
@@ -39,6 +47,8 @@ export class FakePaymentGateway implements PaymentGateway {
         return { outcome: 'declined', reason: this.authorizeBehavior.reason ?? 'card_declined' };
       case 'error':
         return { outcome: 'error', reason: this.authorizeBehavior.reason ?? 'gateway_unreachable' };
+      case 'throws':
+        throw toThrown(this.authorizeBehavior.error, 'authorize rejected unexpectedly');
     }
   }
 
@@ -48,6 +58,9 @@ export class FakePaymentGateway implements PaymentGateway {
 
     if (this.voidBehavior.outcome === 'voided') {
       return { outcome: 'voided' };
+    }
+    if (this.voidBehavior.outcome === 'throws') {
+      throw toThrown(this.voidBehavior.error, 'void rejected unexpectedly');
     }
     return { outcome: 'error', reason: this.voidBehavior.reason ?? 'void_failed' };
   }

@@ -3,14 +3,19 @@ import { Clock, SystemClock } from '../domain/clock';
 import { Order } from '../domain/order';
 import { OrderNotFoundError } from '../domain/errors';
 import { OrderRepository } from './order-repository';
-import { PaymentGateway } from '../gateways/payment-gateway';
-import { OrderCompletionGateway } from '../gateways/order-completion-gateway';
+import { AuthorizeResult, PaymentGateway, VoidResult } from '../gateways/payment-gateway';
+import { CompletionResult, OrderCompletionGateway } from '../gateways/order-completion-gateway';
 import { PartialFailureError, PaymentAuthorizationError } from './errors';
+
+/** Extracts a safe, human-readable message from anything a dependency might throw. */
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * Orchestrates the order lifecycle: guards which stage a command is legal
  * from, calls the relevant external dependency, and applies the resulting
- * domain transition. All state-machine rules themselves live in `Order` â€”
+ * domain transition. All state-machine rules themselves live in `Order` —
  * this class only decides *which* transition to request and in what order
  * to call dependencies.
  */
@@ -33,14 +38,21 @@ export class OrderService {
     const order = await this.requireOrder(orderId);
     order.assertCanTransitionTo('payment_authorized');
 
-    const result = await this.paymentGateway.authorize(orderId);
+    // A rejected/thrown call is treated identically to an explicit `error`
+    // outcome — TypeScript's Promise<AuthorizeResult> return type does not
+    // guarantee the promise never rejects, and a real (or test) gateway may
+    // throw instead of returning a failure object.
+    const result = await this.callDependency<AuthorizeResult>(
+      () => this.paymentGateway.authorize(orderId),
+      (message) => ({ outcome: 'error', reason: message })
+    );
 
     if (result.outcome === 'approved') {
       order.markPaymentAuthorized(result.authorizationId);
     } else if (result.outcome === 'declined') {
       order.rejectPayment(result.reason);
     } else {
-      // Unexpected technical failure â€” distinct from a decline. We don't know
+      // Unexpected technical failure — distinct from a decline. We don't know
       // whether the charge went through, so the order is left `initialized`
       // (no state mutation) rather than guessing. Surfaced as an error for
       // the caller to retry or investigate.
@@ -55,7 +67,14 @@ export class OrderService {
     const order = await this.requireOrder(orderId);
     order.assertCanTransitionTo('complete');
 
-    const completionResult = await this.completionGateway.complete(orderId);
+    // A thrown/rejected completion attempt is treated the same as an
+    // explicit `failed` outcome, so it still triggers the void — a
+    // completion failure must never be swallowed just because the
+    // dependency happened to reject instead of resolving with a failure.
+    const completionResult = await this.callDependency<CompletionResult>(
+      () => this.completionGateway.complete(orderId),
+      (message) => ({ outcome: 'failed', reason: message })
+    );
 
     if (completionResult.outcome === 'completed') {
       order.markComplete();
@@ -69,7 +88,12 @@ export class OrderService {
       throw new Error(`Order ${orderId} is payment_authorized but has no stored authorization id`);
     }
 
-    const voidResult = await this.paymentGateway.void(orderId, authorizationId);
+    // Same reasoning: a void that throws must still land in needs_attention,
+    // never leave the order stuck in payment_authorized.
+    const voidResult = await this.callDependency<VoidResult>(
+      () => this.paymentGateway.void(orderId, authorizationId),
+      (message) => ({ outcome: 'error', reason: message })
+    );
 
     if (voidResult.outcome === 'voided') {
       order.markCancelledAfterVoid(completionResult.reason);
@@ -95,5 +119,19 @@ export class OrderService {
       throw new OrderNotFoundError(orderId);
     }
     return order;
+  }
+
+  /**
+   * Calls an external dependency and normalizes a thrown/rejected error into
+   * the same result shape used for an explicit failure outcome, via
+   * `onRejection`. This is the single place that guards against dependencies
+   * that reject instead of resolving with a failure object.
+   */
+  private async callDependency<T>(call: () => Promise<T>, onRejection: (message: string) => T): Promise<T> {
+    try {
+      return await call();
+    } catch (error) {
+      return onRejection(toErrorMessage(error));
+    }
   }
 }
