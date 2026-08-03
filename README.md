@@ -71,14 +71,6 @@ flowchart LR
     payment_authorized -->|completion succeeds| complete
     payment_authorized -->|completion fails, void succeeds| cancelled
     payment_authorized -->|completion fails, void fails| needs_attention
-
-    subgraph terminal_outcomes[terminal outcomes]
-        direction LR
-        complete
-        cancelled
-        needs_attention
-        rejected
-    end
 ```
 
 **Central invariant:** once an order reaches `payment_authorized`, it must
@@ -86,6 +78,9 @@ always resolve to `complete`, `cancelled`, or `needs_attention` — it can
 never be silently lost, and it can never be marked `cancelled` unless the
 void actually succeeded. `needs_attention` exists specifically so a failed
 void is never mistaken for a clean cancellation.
+
+`complete`, `cancelled`, `needs_attention`, and `rejected` are terminal states
+in this API.
 
 This is enforced in three places that work together:
 
