@@ -3,20 +3,21 @@
 This repo is for the Gametime checkout backend assessment. The full prompt is
 preserved in [ASSESSMENT.md](./ASSESSMENT.md).
 
-## Design Direction
+## What Exists
 
-The state machine lives in `src/domain/order.ts`; external work lives behind
-gateways in `src/gateways`. The payment gateway separates a business decline from a
-technical error, because a declined card can reject the order cleanly while a
-gateway error should not be treated as a clean decline.
+- `src/domain/order.ts` models states, transitions, and history.
+- `src/gateways/*` defines payment and completion interfaces.
+- `src/app/order-service.ts` coordinates order commands and compensation.
 
-The project now has:
+## Recovery Rules
 
-- `Order`, with legal transitions and state history.
-- `PaymentGateway`, for authorize and void.
-- `OrderCompletionGateway`, for fulfillment/completion.
-- `OrderRepository`, with an in-memory implementation for the prototype.
-- Deterministic fakes for tests and demos.
+- A payment decline moves the order to `rejected`.
+- A successful authorization stores the authorization id for a possible later
+  void.
+- A completion success moves the order to `complete`.
+- A completion failure attempts a payment void before cancellation.
+- If the void fails too, the order moves to `needs_attention` and the service
+  throws a partial-failure error.
 
-The next layer will orchestrate these pieces so completion failure always
-attempts the payment void before an order is marked cancelled.
+Tests and the HTTP surface are still being built out, but the central
+orchestration path is now in place.
