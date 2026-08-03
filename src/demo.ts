@@ -80,8 +80,10 @@ async function runCompletionFailureVoidFails(): Promise<void> {
     if (!(error instanceof PartialFailureError)) {
       throw error;
     }
-    console.log('  [OK] surfaced expected PartialFailureError');
-    console.log(`      ${error.message}`);
+    console.log('  [OK] routed the partial failure to manual attention');
+    console.log(`      code: ${error.code}`);
+    console.log(`      completion reason: ${error.completionFailureReason}`);
+    console.log(`      void reason: ${error.voidFailureReason}`);
   }
 
   const persisted = await repository.findById(order.id);
