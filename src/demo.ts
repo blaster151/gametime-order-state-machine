@@ -16,8 +16,11 @@ function printOrder(label: string, order: Order, expectedState: OrderState): voi
   console.log(`  order ${order.id} -> ${order.getState()}`);
   for (const entry of order.getHistory()) {
     const from = entry.fromState ?? '(created)';
-    const detail = entry.reason.message ? ` — ${entry.reason.message}` : '';
-    console.log(`    ${entry.at.toISOString()}  ${from} -> ${entry.toState}  [${entry.reason.code}]${detail}`);
+    console.log(`    ${from} -> ${entry.toState}  [${entry.reason.code}]`);
+    console.log(`      at ${entry.at.toISOString()}`);
+    if (entry.reason.message) {
+      console.log(`      reason: ${entry.reason.message}`);
+    }
   }
 }
 
@@ -77,7 +80,8 @@ async function runCompletionFailureVoidFails(): Promise<void> {
     if (!(error instanceof PartialFailureError)) {
       throw error;
     }
-    console.log(`  [OK] surfaced expected PartialFailureError: ${error.message}`);
+    console.log('  [OK] surfaced expected PartialFailureError');
+    console.log(`      ${error.message}`);
   }
 
   const persisted = await repository.findById(order.id);
