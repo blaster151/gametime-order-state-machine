@@ -20,28 +20,30 @@ The full assessment prompt is preserved in [ASSESSMENT.md](./ASSESSMENT.md).
 
 ## What was built and why
 
-- **`src/domain/order.ts`** — the state machine itself. Six states
-  (`initialized`, `payment_authorized`, `complete`, `rejected`, `cancelled`,
-  `needs_attention`), a single transition table, and an `Order` aggregate
-  whose only mutator (`transitionTo`) updates current state and appends a
-  history entry (from-state, to-state, UTC timestamp, structured reason) in
-  one step. This is the one file to read to understand the whole machine.
-- **`src/app/order-service.ts`** — orchestration. Decides which dependency to
-  call for a given command, guards illegal transitions *before* touching any
-  dependency, and enforces the ordering rule "void before cancelling."
-- **`src/gateways/*`** — `PaymentGateway` (authorize/void) and `OrderCompletionGateway`
-  (complete), the two stubbed external gateways.
-- **`src/fakes/*`** — deterministic, configurable test doubles for both
-  gateways (used by both the test suite and the demo runner).
-- **`src/http/*`** — a thin Fastify layer: four command-oriented endpoints,
-  light Zod validation of request *shape* only, and centralized domain-error
-  → HTTP-status mapping.
-- **`src/demo.ts`** — runs and prints all four required scenarios end to end.
+The core deliverable is a small, in-process order lifecycle model: six states,
+one legal-transition table, and an `Order` aggregate that records every move
+as timestamped history. All state changes go through one private transition
+method, so the current state and audit trail are kept in step.
 
-I chose a small layered structure (domain → app → gateways/fakes → http)
-instead of a single file so the state machine's rules stay isolated and
-easy to find, without introducing a framework, database, or DI container —
-none of which this problem needs.
+Around that core, I added just enough service boundary to demonstrate the
+checkout recovery rules:
+
+- `OrderService` owns command orchestration, including "void before
+  cancelling" after a completion failure.
+- `PaymentGateway` and `OrderCompletionGateway` keep external effects behind
+  replaceable contracts.
+- Deterministic fakes make declines, completion failures, void failures, and
+  thrown/rejected dependencies reproducible in tests and the demo.
+- An in-memory repository satisfies the assessment's persistence needs without
+  adding database setup.
+- A thin Fastify API exposes create, authorize payment, complete, and read
+  commands with centralized error mapping.
+
+I chose this shape instead of a single `index.ts` so the state machine stays
+easy to inspect while the failure recoveries remain observable through tests,
+HTTP, and `npm run demo`. There is no framework-heavy state library, database,
+queue, or DI container because those would draw attention away from the order
+lifecycle itself.
 
 **Fast reviewer path:** read `src/domain/order.ts`,
 `src/app/order-service.ts`, and `test/app/order-service.test.ts`. Those three
@@ -62,17 +64,21 @@ architecture.
 ## Architecture and the central domain invariant
 
 ```mermaid
-stateDiagram-v2
-    [*] --> initialized
-    initialized --> payment_authorized: payment approved
-    initialized --> rejected: payment declined
-    payment_authorized --> complete: completion succeeds
-    payment_authorized --> cancelled: completion fails, void succeeds
-    payment_authorized --> needs_attention: completion fails, void also fails
-    complete --> [*]
-    rejected --> [*]
-    cancelled --> [*]
-    needs_attention --> [*]
+flowchart LR
+    start((start)) --> initialized
+    initialized -->|payment approved| payment_authorized
+    initialized -->|payment declined| rejected
+    payment_authorized -->|completion succeeds| complete
+    payment_authorized -->|completion fails, void succeeds| cancelled
+    payment_authorized -->|completion fails, void fails| needs_attention
+
+    subgraph terminal_outcomes[terminal outcomes]
+        direction LR
+        complete
+        cancelled
+        needs_attention
+        rejected
+    end
 ```
 
 **Central invariant:** once an order reaches `payment_authorized`, it must
