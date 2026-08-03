@@ -20,30 +20,30 @@ The full assessment prompt is preserved in [ASSESSMENT.md](./ASSESSMENT.md).
 
 ## What was built and why
 
-The core deliverable is a small, in-process order lifecycle model: six states,
+The main deliverable is a small, in-process order lifecycle model: six states,
 one legal-transition table, and an `Order` aggregate that records every move
 as timestamped history. All state changes go through one private transition
-method, so the current state and audit trail are kept in step.
+method, so the current state and audit trail stay aligned.
 
-Around that core, I added just enough service boundary to demonstrate the
-checkout recovery rules:
+To make those rules executable and reviewable, I added a narrow service layer
+and a few simple adapters:
 
 - `OrderService` owns command orchestration, including "void before
   cancelling" after a completion failure.
 - `PaymentGateway` and `OrderCompletionGateway` keep external effects behind
   replaceable contracts.
-- Deterministic fakes make declines, completion failures, void failures, and
-  thrown/rejected dependencies reproducible in tests and the demo.
 - An in-memory repository satisfies the assessment's persistence needs without
   adding database setup.
 - A thin Fastify API exposes create, authorize payment, complete, and read
   commands with centralized error mapping.
+- Deterministic fakes make declines, completion failures, void failures, and
+  thrown/rejected dependencies reproducible in tests and the demo.
 
-I chose this shape instead of a single `index.ts` so the state machine stays
-easy to inspect while the failure recoveries remain observable through tests,
-HTTP, and `npm run demo`. There is no framework-heavy state library, database,
-queue, or DI container because those would draw attention away from the order
-lifecycle itself.
+I split the code into a few small layers so the state machine remains easy to
+inspect while the recovery behavior can still be exercised through tests, HTTP,
+and `npm run demo`. Given the assessment's 3-hour expectation, I kept the
+surrounding infrastructure intentionally small and saved heavier production
+concerns for the tradeoffs and "more time" sections below.
 
 **Fast reviewer path:** read `src/domain/order.ts`,
 `src/app/order-service.ts`, and `test/app/order-service.test.ts`. Those three
