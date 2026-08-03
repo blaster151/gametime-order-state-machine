@@ -61,7 +61,7 @@ values. Interfaces are intentionally still used for gateway and repository
 contracts because classes implement them cleanly and that wording matches the
 architecture.
 
-## Architecture and the central domain invariant
+## Order flow
 
 ```mermaid
 flowchart LR
@@ -75,11 +75,8 @@ flowchart LR
     complete ~~~ cancelled ~~~ needs_attention ~~~ rejected
 ```
 
-**Central invariant:** once an order reaches `payment_authorized`, it must
-always resolve to `complete`, `cancelled`, or `needs_attention` — it can
-never be silently lost, and it can never be marked `cancelled` unless the
-void actually succeeded. `needs_attention` exists specifically so a failed
-void is never mistaken for a clean cancellation.
+**Main rule:** an authorized payment must end as `complete`, `cancelled`, or
+`needs_attention`; a failed void is never recorded as a clean cancellation.
 
 `complete`, `cancelled`, `needs_attention`, and `rejected` are terminal states
 in this API.
