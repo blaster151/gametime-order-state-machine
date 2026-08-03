@@ -69,8 +69,8 @@ flowchart LR
     initialized -->|payment approved| payment_authorized
     initialized -->|payment declined| rejected
     payment_authorized -->|completion succeeds| complete
-    payment_authorized -->|completion fails, void succeeds| cancelled
-    payment_authorized -->|completion fails, void fails| needs_attention
+    payment_authorized -->|void succeeds| cancelled
+    payment_authorized -->|void fails| needs_attention
 
     payment_authorized ~~~ rejected
 ```
