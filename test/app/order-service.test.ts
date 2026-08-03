@@ -8,6 +8,31 @@ import { FakeOrderCompletionGateway } from '../../src/fakes/fake-order-completio
 import { SequentialClock } from '../support/sequential-clock';
 import { OrderRepository } from '../../src/app/order-repository';
 import { RecordingOrderRepository } from '../support/recording-order-repository';
+import { PaymentGateway } from '../../src/gateways/payment-gateway';
+
+class ObservingVoidPaymentGateway implements PaymentGateway {
+  readonly calls: Array<{ method: 'authorize' | 'void'; orderId: string; authorizationId?: string }> = [];
+  stateDuringVoid: string | null = null;
+
+  constructor(
+    private readonly repository: OrderRepository,
+    private readonly sharedCallLog: string[]
+  ) {}
+
+  async authorize(orderId: string) {
+    this.calls.push({ method: 'authorize', orderId });
+    this.sharedCallLog.push('payment.authorize');
+    return { outcome: 'approved' as const, authorizationId: `auth-${orderId}` };
+  }
+
+  async void(orderId: string, authorizationId: string) {
+    this.calls.push({ method: 'void', orderId, authorizationId });
+    this.sharedCallLog.push('payment.void');
+    const stored = await this.repository.findById(orderId);
+    this.stateDuringVoid = stored?.getState() ?? null;
+    return { outcome: 'voided' as const };
+  }
+}
 
 function buildService(options: {
   authorize?: ConstructorParameters<typeof FakePaymentGateway>[0];
@@ -83,11 +108,13 @@ describe('OrderService — payment decline', () => {
 describe('OrderService — completion failure, void succeeds', () => {
   it('cancels the order only after the void succeeds', async () => {
     const sharedCallLog: string[] = [];
-    const { service, paymentGateway } = buildService({
-      completion: { outcome: 'failed', reason: 'fulfillment_error' },
-      voidBehavior: { outcome: 'voided' },
-      sharedCallLog,
-    });
+    const repository = new InMemoryOrderRepository();
+    const paymentGateway = new ObservingVoidPaymentGateway(repository, sharedCallLog);
+    const completionGateway = new FakeOrderCompletionGateway({ outcome: 'failed', reason: 'fulfillment_error' }, sharedCallLog);
+    const service = new OrderService(repository, paymentGateway, completionGateway, new SequentialClock(), (() => {
+      let n = 0;
+      return () => `order-${++n}`;
+    })());
 
     const created = await service.createOrder();
     await service.authorizePayment(created.id);
@@ -96,7 +123,12 @@ describe('OrderService — completion failure, void succeeds', () => {
     expect(result.getState()).toBe('cancelled');
     expect(result.getHistory().at(-1)?.reason.code).toBe('completion_failed_void_succeeded');
     expect(sharedCallLog).toEqual(['payment.authorize', 'completionGateway.complete', 'payment.void']);
-    expect(paymentGateway.calls.filter((c) => c.method === 'void')).toHaveLength(1);
+    expect(paymentGateway.calls.at(-1)).toEqual({
+      method: 'void',
+      orderId: created.id,
+      authorizationId: `auth-${created.id}`,
+    });
+    expect(paymentGateway.stateDuringVoid).toBe('payment_authorized');
   });
 });
 

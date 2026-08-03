@@ -48,40 +48,6 @@ none of which this problem needs.
 files cover the state machine, the stage-dependent recovery orchestration,
 and the four required scenarios.
 
-## Quick tour
-
-```text
-src/
-|-- domain/
-|   |-- order.ts                         # state machine, transition table, history
-|   |-- errors.ts                        # domain errors
-|   `-- clock.ts                         # injectable timestamp source
-|-- app/
-|   |-- order-service.ts                 # command orchestration and compensation
-|   |-- order-repository.ts              # repository contract + in-memory implementation
-|   `-- errors.ts                        # application-level failures
-|-- gateways/
-|   |-- payment-gateway.ts               # authorize/void external dependency shape
-|   `-- order-completion-gateway.ts      # completion dependency shape
-|-- fakes/
-|   |-- fake-payment-gateway.ts          # deterministic gateway fake for tests/demo
-|   `-- fake-order-completion-gateway.ts # deterministic completion fake
-|-- http/
-|   |-- server.ts                        # Fastify routes and error mapping
-|   |-- schemas.ts                       # Zod request validation
-|   `-- serialize-order.ts               # API response shaping
-|-- demo.ts                              # deterministic scenario runner
-`-- index.ts                             # HTTP entrypoint
-
-test/
-|-- domain/order.test.ts                 # transition/history invariants
-|-- app/order-service.test.ts            # required scenarios + recovery guards
-|-- app/order-repository.test.ts         # in-memory persistence behavior
-|-- fakes/fakes.test.ts                  # fake gateway behavior
-|-- http/orders.test.ts                  # route wiring and error mapping
-`-- health.test.ts                       # health endpoint
-```
-
 ## TypeScript posture
 
 Zod schemas own HTTP request-shape validation, and exported request types are
@@ -135,10 +101,12 @@ This is enforced in three places that work together:
 
 ## How to run it
 
-```bash
-npm install
+Prerequisite: Node.js 20+
 
-npm test          # full suite (41 tests)
+```bash
+npm ci
+
+npm test          # full suite (42 tests)
 npm run build     # type-check + compile to dist/
 npm run lint      # eslint
 
@@ -165,26 +133,7 @@ review pass can use this checklist:
 
 Additional tests cover the domain transition matrix, dependency rejections,
 HTTP error mapping, deterministic fakes, and the in-memory repository. The
-current suite is 41 tests, all run by `npm test`.
-
-## Assessment coverage
-
-- **Model states, valid transitions, and timestamped history:**
-  `src/domain/order.ts`
-- **Handle failures differently by stage:** `OrderService.authorizePayment`
-  rejects payment declines, while `OrderService.completeOrder` voids payment
-  after completion failure.
-- **Surface partial failures:** failed completion plus failed void persists
-  `needs_attention` and raises `PartialFailureError`; the HTTP layer maps it
-  to a non-success response.
-- **Expose a small API:** create, authorize payment, complete, and read order
-  state/history.
-- **Stub payment behind an interface:** `PaymentGateway`, with deterministic
-  fakes for tests and demos.
-- **Required tests:** the four named scenarios are listed in the reviewer
-  checklist above.
-- **Submission README topics:** what was built and why, how to run it,
-  tradeoffs, more-time improvements, and AI usage are all documented here.
+current suite is 42 tests, all run by `npm test`.
 
 ## Example API commands
 
@@ -235,6 +184,12 @@ test-only controls out of the production-shaped surface.
   only required stubbing payment. There's no way to test a completion
   failure otherwise, so `OrderCompletionGateway` exists as a second, symmetrical
   gateway rather than a hard-coded failure switch.
+- **A rejected completion call is treated as a confirmed failure.** For this
+  prototype, a thrown/rejected `complete()` is normalized into the same failure
+  path as `{ outcome: 'failed' }`, which triggers a void. A production
+  fulfillment contract should distinguish confirmed failure from unknown
+  outcome (for example, a timeout after tickets may have been issued); unknowns
+  would need reconciliation or manual attention rather than an automatic void.
 - **No simulation flags on the public API.** Another reasonable demo-oriented
   shape would be request flags like `simulateCompletionFailure` and
   `simulateVoidFailure`, especially if there were a browser UI or e2e tests
@@ -269,22 +224,6 @@ test-only controls out of the production-shaped surface.
   examples, generating and maintaining an OpenAPI spec (plus the
   Zod-to-schema wiring) would add configuration disproportionate to what it
   documents.
-
-## Production concerns deliberately omitted
-
-- Durable storage, migrations, and backup/restore.
-- Retries, timeouts, and idempotency keys for the payment gateway (a real
-  gateway call can fail without you knowing if it actually succeeded —
-  idempotency keys are how you'd resolve that safely).
-- Concurrency control: two simultaneous requests against the same order id
-  are not locked in this prototype (in-memory `Map` writes aren't atomic
-  across an `await` boundary). A real system would need optimistic
-  concurrency (version numbers) or per-order locking.
-- Alerting/paging and an operator workflow for resolving `needs_attention`
-  orders — today it's just an inspectable state with structured reasons.
-- AuthN/AuthZ on the HTTP API.
-- Structured logging/metrics/tracing beyond Fastify's default request logs.
-- Horizontal scaling / multi-instance coordination.
 
 ## What I'd do differently with more time
 

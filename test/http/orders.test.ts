@@ -6,6 +6,13 @@ import { FakePaymentGateway } from '../../src/fakes/fake-payment-gateway';
 import { FakeOrderCompletionGateway } from '../../src/fakes/fake-order-completion-gateway';
 import { SequentialClock } from '../support/sequential-clock';
 
+interface SerializedHistoryEntry {
+  readonly at: string;
+  readonly reason: {
+    readonly code: string;
+  };
+}
+
 function buildTestServer(
   options: {
     authorize?: ConstructorParameters<typeof FakePaymentGateway>[0];
@@ -41,7 +48,31 @@ describe('HTTP API — route wiring and error mapping', () => {
 
     const fetched = await app.inject({ method: 'GET', url: `/orders/${id}` });
     expect(fetched.statusCode).toBe(200);
-    expect(fetched.json().history).toHaveLength(3);
+    const history = fetched.json().history as SerializedHistoryEntry[];
+    expect(history).toHaveLength(3);
+    expect(history.map((entry) => entry.reason.code)).toEqual([
+      'order_created',
+      'payment_authorized',
+      'completion_succeeded',
+    ]);
+    expect(history.every((entry) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.at))).toBe(true);
+  });
+
+  it('maps an unexpected payment gateway error to 502', async () => {
+    const app = buildTestServer({
+      authorize: { outcome: 'error', reason: 'gateway_unreachable' },
+    });
+    const created = await app.inject({ method: 'POST', url: '/orders' });
+    const { id } = created.json();
+
+    const response = await app.inject({ method: 'POST', url: `/orders/${id}/authorize-payment` });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({
+      code: 'PAYMENT_GATEWAY_ERROR',
+      orderId: id,
+      reason: 'gateway_unreachable',
+    });
   });
 
   it('maps an unknown order id to 404', async () => {
