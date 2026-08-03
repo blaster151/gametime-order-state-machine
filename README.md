@@ -5,29 +5,31 @@ preserved in [ASSESSMENT.md](./ASSESSMENT.md).
 
 ## What Was Built
 
-A small TypeScript service for order state transitions, dependency-backed
-orchestration, and a command-oriented HTTP API.
+A small TypeScript service modeling the checkout order state machine, with
+command-oriented HTTP endpoints and deterministic fakes for payment and
+completion dependencies.
 
-## API Commands
-
-```bash
-curl -s -X POST http://localhost:3000/orders
-curl -s -X POST http://localhost:3000/orders/<id>/authorize-payment
-curl -s -X POST http://localhost:3000/orders/<id>/complete
-curl -s http://localhost:3000/orders/<id>
-```
-
-There is no generic "set state" endpoint. The API exposes domain commands
-only, so business rules stay in the service and domain model.
-
-## Run
+## How To Run
 
 ```bash
 npm install
 npm test
 npm run build
+npm run demo
 npm run dev
 ```
 
-The remaining work is to add a deterministic scenario demo and expand the
-README with tradeoffs, production omissions, and AI usage notes.
+`npm run demo` prints all four required scenarios end to end with final state
+and history:
+
+- Happy path
+- Payment decline
+- Completion failure with successful void
+- Completion failure with failed void
+
+## Direction
+
+The architecture is intentionally small: domain state machine, application
+service, dependency ports, fakes, and HTTP adapters. The final documentation
+pass will add the fuller explanation of tradeoffs, API errors, production
+concerns, and AI usage.
