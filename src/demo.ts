@@ -2,7 +2,7 @@ import { OrderService } from './app/order-service';
 import { InMemoryOrderRepository } from './app/order-repository';
 import { FakePaymentGateway } from './fakes/fake-payment-gateway';
 import { FakeOrderCompletionGateway } from './fakes/fake-order-completion-gateway';
-import { Order } from './domain/order';
+import { Order, OrderState } from './domain/order';
 import { PartialFailureError } from './app/errors';
 
 /**
@@ -10,8 +10,9 @@ import { PartialFailureError } from './app/errors';
  * trail (from-state, to-state, timestamp, structured reason) visible for
  * each of the four required scenarios.
  */
-function printOrder(label: string, order: Order): void {
+function printOrder(label: string, order: Order, expectedState: OrderState): void {
   console.log(`\n${label}`);
+  console.log(`  [OK] final state: ${order.getState()}${order.getState() === expectedState ? '' : ` (expected ${expectedState})`}`);
   console.log(`  order ${order.id} -> ${order.getState()}`);
   for (const entry of order.getHistory()) {
     const from = entry.fromState ?? '(created)';
@@ -27,7 +28,7 @@ async function runHappyPath(): Promise<void> {
   await service.authorizePayment(order.id);
   const result = await service.completeOrder(order.id);
 
-  printOrder('Scenario 1 — happy path (initialized -> payment_authorized -> complete)', result);
+  printOrder('Scenario 1 — happy path (initialized -> payment_authorized -> complete)', result, 'complete');
 }
 
 async function runPaymentDecline(): Promise<void> {
@@ -40,7 +41,7 @@ async function runPaymentDecline(): Promise<void> {
   const order = await service.createOrder();
   const result = await service.authorizePayment(order.id);
 
-  printOrder('Scenario 2 — payment decline (initialized -> rejected, no cleanup)', result);
+  printOrder('Scenario 2 — payment decline (initialized -> rejected, no cleanup)', result, 'rejected');
 }
 
 async function runCompletionFailureVoidSucceeds(): Promise<void> {
@@ -54,7 +55,7 @@ async function runCompletionFailureVoidSucceeds(): Promise<void> {
   await service.authorizePayment(order.id);
   const result = await service.completeOrder(order.id);
 
-  printOrder('Scenario 3 — completion failure, void succeeds (-> cancelled)', result);
+  printOrder('Scenario 3 — completion failure, void succeeds (-> cancelled)', result, 'cancelled');
 }
 
 async function runCompletionFailureVoidFails(): Promise<void> {
@@ -76,12 +77,12 @@ async function runCompletionFailureVoidFails(): Promise<void> {
     if (!(error instanceof PartialFailureError)) {
       throw error;
     }
-    console.log(`  surfaced PartialFailureError: ${error.message}`);
+    console.log(`  [OK] surfaced expected PartialFailureError: ${error.message}`);
   }
 
   const persisted = await repository.findById(order.id);
   if (persisted) {
-    printOrder('  persisted order after the failure (not silently cancelled)', persisted);
+    printOrder('  persisted order after the failure (not silently cancelled)', persisted, 'needs_attention');
   }
 }
 
@@ -90,7 +91,7 @@ async function main(): Promise<void> {
   await runPaymentDecline();
   await runCompletionFailureVoidSucceeds();
   await runCompletionFailureVoidFails();
-  console.log('\nDone.');
+  console.log('\nAll 4 demo scenarios completed successfully.');
 }
 
 main().catch((error) => {
