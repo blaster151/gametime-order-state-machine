@@ -1,25 +1,24 @@
 # Gametime Order State Machine
 
 This repo is for the Gametime checkout backend assessment. The full prompt is
-preserved in [ASSESSMENT.md](./ASSESSMENT.md) so the implementation can be
-reviewed against the original problem.
+preserved in [ASSESSMENT.md](./ASSESSMENT.md).
 
 ## Design Direction
 
-- Model the checkout lifecycle as an explicit state machine instead of letting
-  callers assign arbitrary states.
-- Keep state and history changes together in a small domain object.
-- Put payment and completion side effects behind gateway interfaces so failure modes
-  are deterministic in tests.
-- Use an application service for orchestration: authorize payment, complete
-  the order, and compensate with a void when completion fails.
-- Start with in-memory persistence and a small command-oriented HTTP API; avoid
-  database, queue, and framework work that would distract from the state
-  machine.
+The core of the solution is a small domain model in `src/domain/order.ts`.
+It owns the allowed transition table, the current order state, and the audit
+history. That keeps the central invariant simple: an order can only move
+through named domain methods, and every state change appends a timestamped
+history entry at the same time.
 
-## Expected Scenarios
+Current domain states:
 
-- Happy path: `initialized -> payment_authorized -> complete`
-- Payment decline: `initialized -> rejected`
-- Completion failure with successful void: `payment_authorized -> cancelled`
-- Completion failure with failed void: `payment_authorized -> needs_attention`
+- `initialized`
+- `payment_authorized`
+- `complete`
+- `rejected`
+- `cancelled`
+- `needs_attention`
+
+Next up: add ports for payment and completion dependencies, then an
+application service to coordinate failure recovery around the domain model.
