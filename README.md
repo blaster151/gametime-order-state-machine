@@ -3,23 +3,31 @@
 This repo is for the Gametime checkout backend assessment. The full prompt is
 preserved in [ASSESSMENT.md](./ASSESSMENT.md).
 
-## Current Shape
+## What Was Built
 
-The project is a TypeScript service with a layered structure:
+A small TypeScript service for order state transitions, dependency-backed
+orchestration, and a command-oriented HTTP API.
 
-- Domain state machine in `src/domain/order.ts`
-- Application orchestration in `src/app/order-service.ts`
-- Payment, completion, and repository
-- Deterministic fakes for payment and completion behavior
+## API Commands
 
-## Test Coverage
+```bash
+curl -s -X POST http://localhost:3000/orders
+curl -s -X POST http://localhost:3000/orders/<id>/authorize-payment
+curl -s -X POST http://localhost:3000/orders/<id>/complete
+curl -s http://localhost:3000/orders/<id>
+```
 
-The required assessment scenarios are covered:
+There is no generic "set state" endpoint. The API exposes domain commands
+only, so business rules stay in the service and domain model.
 
-- Happy path
-- Payment decline
-- Completion failure with successful void
-- Completion failure with failed void and `needs_attention`
+## Run
 
-Additional tests cover invalid transitions and repository behavior. The next
-step is to expose the same commands through a small HTTP API.
+```bash
+npm install
+npm test
+npm run build
+npm run dev
+```
+
+The remaining work is to add a deterministic scenario demo and expand the
+README with tradeoffs, production omissions, and AI usage notes.
