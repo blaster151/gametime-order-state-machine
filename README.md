@@ -3,21 +3,23 @@
 This repo is for the Gametime checkout backend assessment. The full prompt is
 preserved in [ASSESSMENT.md](./ASSESSMENT.md).
 
-## What Exists
+## Current Shape
 
-- `src/domain/order.ts` models states, transitions, and history.
-- `src/gateways/*` defines payment and completion interfaces.
-- `src/app/order-service.ts` coordinates order commands and compensation.
+The project is a TypeScript service with a layered structure:
 
-## Recovery Rules
+- Domain state machine in `src/domain/order.ts`
+- Application orchestration in `src/app/order-service.ts`
+- Payment, completion, and repository
+- Deterministic fakes for payment and completion behavior
 
-- A payment decline moves the order to `rejected`.
-- A successful authorization stores the authorization id for a possible later
-  void.
-- A completion success moves the order to `complete`.
-- A completion failure attempts a payment void before cancellation.
-- If the void fails too, the order moves to `needs_attention` and the service
-  throws a partial-failure error.
+## Test Coverage
 
-Tests and the HTTP surface are still being built out, but the central
-orchestration path is now in place.
+The required assessment scenarios are covered:
+
+- Happy path
+- Payment decline
+- Completion failure with successful void
+- Completion failure with failed void and `needs_attention`
+
+Additional tests cover invalid transitions and repository behavior. The next
+step is to expose the same commands through a small HTTP API.
