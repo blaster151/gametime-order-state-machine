@@ -72,7 +72,7 @@ flowchart LR
     payment_authorized -->|completion fails, void succeeds| cancelled
     payment_authorized -->|completion fails, void fails| needs_attention
 
-    complete ~~~ cancelled ~~~ needs_attention ~~~ rejected
+    payment_authorized ~~~ rejected
 ```
 
 **Main rule:** an authorized payment must end as `complete`, `cancelled`, or
